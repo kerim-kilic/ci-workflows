@@ -1,0 +1,71 @@
+name: Repository checks
+
+# Reusable workflow: lints the calling repository's workflows (actionlint), audits them (zizmor) and lints its shell
+# scripts (ShellCheck). No cloud credentials.
+#
+# zizmor reads the caller's .github/zizmor.yml when there is one. Tool versions are pinned here and also in
+# tools/<tool>/Dockerfile for Dependabot: change both together (see the README).
+on:
+  workflow_call:
+    inputs:
+      shellcheck-paths:
+        description: >-
+          Space-separated paths or globs of shell scripts to lint, for example "scripts/*.sh tools/*.sh". `**` matches
+          subdirectories. Leave empty to skip ShellCheck. Fails when nothing matches, so a typo can't pass silently.
+        type: string
+        default: ""
+      zizmor:
+        description: Audit the workflows with zizmor.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Lint workflows
+        run: docker run --rm -v "$PWD:/repo:ro" --workdir /repo rhysd/actionlint:1.7.12 -color
+
+  zizmor:
+    if: inputs.zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Offline: no token is passed, so the audits that query GitHub are skipped.
+      - name: Audit workflows
+        run: docker run --rm -v "$PWD:/repo:ro" --workdir /repo ghcr.io/zizmorcore/zizmor:1.32.0 --offline --no-progress .
+
+  shellcheck:
+    if: inputs.shellcheck-paths != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # ShellCheck is preinstalled on the runner. The globs are expanded on purpose, so the variable is left unquoted.
+      - name: Lint scripts
+        env:
+          SHELLCHECK_PATHS: ${{ inputs.shellcheck-paths }}
+        run: |
+          shopt -s globstar nullglob
+          # shellcheck disable=SC2206
+          files=($SHELLCHECK_PATHS)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::No files match: $SHELLCHECK_PATHS"
+            exit 1
+          fi
+          shellcheck -- "${files[@]}"

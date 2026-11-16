@@ -1,0 +1,36 @@
+name: Self-test
+
+# Runs both reusable workflows from this commit (local paths, not a release) against the fixtures in tests/, and so
+# also lints and audits this repository's own workflows. A release is only tagged on a commit where this passes.
+on:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    uses: ./.github/workflows/terraform.yml
+    with:
+      working-directory: tests/fixtures/terraform
+
+  repo:
+    uses: ./.github/workflows/repo-checks.yml
+    with:
+      shellcheck-paths: tests/fixtures/scripts/*.sh tools/*.sh
+
+  # Fails on a Dependabot pull request that bumps tools/<tool>/Dockerfile until the workflow uses the same version.
+  tool-versions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check the workflows use the versions in tools/
+        run: tools/check-tool-versions.sh

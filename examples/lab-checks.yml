@@ -1,0 +1,40 @@
+name: Checks
+
+# Draft for a lab repository (this one is for aws-ipv6-lab). Static checks only, no cloud credentials.
+# Checks that only make sense in this repository, such as the scrubber's tests, stay here as ordinary jobs.
+# Replace RELEASE_SHA with the full commit SHA of the release you want; Dependabot bumps it from then on.
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    uses: kerim-kilic/ci-workflows/.github/workflows/terraform.yml@RELEASE_SHA # v1.0.0
+    with:
+      # Off until the existing findings are triaged: fix them, or accept the deliberate lab shortcuts inline
+      # (#trivy:ignore:<id>) with a reason that matches the README's "Shortcuts taken". Then remove this line.
+      trivy: false
+
+  repo:
+    uses: kerim-kilic/ci-workflows/.github/workflows/repo-checks.yml@RELEASE_SHA # v1.0.0
+    with:
+      shellcheck-paths: scripts/*.sh instance/*.sh
+
+  scrubber:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Python 3 is preinstalled on the runner, and the scrubber only uses the standard library.
+      - name: Test the scrubber
+        run: python3 -m unittest discover -s scripts -v

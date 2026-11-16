@@ -1,0 +1,5 @@
+# Left behind by running the checks locally against the fixtures.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*

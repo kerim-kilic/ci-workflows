@@ -1,0 +1,35 @@
+# Keeps the actions these workflows use, and the tools they run, up to date: one grouped pull request a week for each
+# when a new release exists. Pull requests target dev, so an update passes the self-test there before it reaches main
+# and a release. Security updates may still target the default branch.
+# Cooldown: a new release is only proposed once it is 7 days old, so a compromised release that is pulled quickly never
+# reaches this repository, or the repositories that call it.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # The tool versions (actionlint, zizmor, Trivy, TFLint). Dependabot can't see them in the workflows, so each one is
+  # also kept in tools/<tool>/Dockerfile. A pull request from here fails the self-test until the matching line in the
+  # workflow is changed too: push that one-line change to the Dependabot branch, then merge.
+  - package-ecosystem: "docker"
+    directories:
+      - "/tools/actionlint"
+      - "/tools/zizmor"
+      - "/tools/trivy"
+      - "/tools/tflint"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      tools:
+        patterns: ["*"]

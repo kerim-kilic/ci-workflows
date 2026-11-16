@@ -1,0 +1,26 @@
+name: Checks
+
+# Draft for the website repository: replaces lint.yml and terraform-checks.yml. Static checks only, no cloud credentials.
+# Runs on every push to any branch (no path filter), so every check reports on every pull request and can be required on
+# main. Replace RELEASE_SHA with the full commit SHA of the release you want; Dependabot bumps it from then on.
+on:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    uses: kerim-kilic/ci-workflows/.github/workflows/terraform.yml@RELEASE_SHA # v1.0.0
+    with:
+      validate-directories: '["envs/shared", "envs/dev", "envs/prod"]'
+      tflint-recursive: true
+
+  repo:
+    uses: kerim-kilic/ci-workflows/.github/workflows/repo-checks.yml@RELEASE_SHA # v1.0.0
+    with:
+      shellcheck-paths: tools/*.sh

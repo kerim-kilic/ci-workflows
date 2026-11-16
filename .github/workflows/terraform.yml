@@ -1,0 +1,132 @@
+name: Terraform checks
+
+# Reusable workflow: checks the formatting, validates every root module, lints with TFLint and scans with Trivy.
+# It needs no cloud credentials and never plans or applies anything.
+#
+# Tool versions are pinned here, so every repository that calls this workflow lints with the same versions. Each one is
+# also in tools/<tool>/Dockerfile for Dependabot: change both together (see the README). Inputs only ever reach a shell
+# through environment variables, never by expanding ${{ }} inside a script.
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: Directory that holds the Terraform code, relative to the repository root.
+        type: string
+        default: terraform
+      validate-directories:
+        description: JSON array of root modules to initialise and validate, relative to working-directory.
+        type: string
+        default: '["."]'
+      terraform-version:
+        description: Terraform version constraint passed to setup-terraform.
+        type: string
+        default: "^1.11.0"
+      tflint-config:
+        description: TFLint configuration file, relative to working-directory.
+        type: string
+        default: .tflint.hcl
+      tflint-recursive:
+        description: Lint every directory under working-directory (each as its own module), not only the root.
+        type: boolean
+        default: false
+      trivy:
+        description: Scan the configuration with Trivy. Accept findings inline in the Terraform with a reason.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+
+      - name: Check formatting
+        env:
+          TF_DIR: ${{ inputs.working-directory }}
+        run: terraform fmt -check -recursive -diff "$TF_DIR"
+
+  validate:
+    name: validate (${{ matrix.directory }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        directory: ${{ fromJSON(inputs.validate-directories) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+
+      - name: Initialise (no backend)
+        working-directory: ${{ inputs.working-directory }}/${{ matrix.directory }}
+        run: terraform init -backend=false -input=false
+
+      - name: Validate
+        working-directory: ${{ inputs.working-directory }}/${{ matrix.directory }}
+        run: terraform validate
+
+  tflint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.66.0
+
+      - name: Install plugins
+        env:
+          # Avoids GitHub API rate limits when downloading rulesets such as the AWS one.
+          GITHUB_TOKEN: ${{ github.token }}
+          TF_DIR: ${{ inputs.working-directory }}
+          TFLINT_CONFIG: ${{ inputs.tflint-config }}
+        run: tflint --chdir="$TF_DIR" --init --config="$GITHUB_WORKSPACE/$TF_DIR/$TFLINT_CONFIG"
+
+      - name: Lint
+        env:
+          TF_DIR: ${{ inputs.working-directory }}
+          TFLINT_CONFIG: ${{ inputs.tflint-config }}
+          TFLINT_RECURSIVE: ${{ inputs.tflint-recursive }}
+        run: |
+          args=(--chdir="$TF_DIR" --config="$GITHUB_WORKSPACE/$TF_DIR/$TFLINT_CONFIG" --format=compact)
+          if [ "$TFLINT_RECURSIVE" = "true" ]; then
+            args+=(--recursive)
+          fi
+          tflint "${args[@]}"
+
+  trivy:
+    if: inputs.trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The image is used directly rather than through a setup action.
+      - name: Scan the Terraform configuration
+        env:
+          TF_DIR: ${{ inputs.working-directory }}
+        run: >-
+          docker run --rm -v "$PWD:/repo:ro" --workdir /repo aquasec/trivy:0.76.2
+          config --quiet --exit-code 1 "$TF_DIR"
