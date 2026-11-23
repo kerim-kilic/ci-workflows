@@ -45,7 +45,7 @@ jobs:
 
       # Offline: no token is passed, so the audits that query GitHub are skipped.
       - name: Audit workflows
-        run: docker run --rm -v "$PWD:/repo:ro" --workdir /repo ghcr.io/zizmorcore/zizmor:1.32.0 --offline --no-progress .
+        run: docker run --rm -v "$PWD:/repo:ro" --workdir /repo ghcr.io/zizmorcore/zizmor:1.33.1 --offline --no-progress .
 
   shellcheck:
     if: inputs.shellcheck-paths != ''
